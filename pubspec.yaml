@@ -1,0 +1,94 @@
+name: ice_cream
+description: "A new Flutter project."
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: ^3.8.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  intl: ^0.20.2
+  google_maps_flutter: ^2.7.0
+  image_picker: ^1.1.0
+  font_awesome_flutter: ^10.9.1
+  provider: ^6.1.5+1
+  http: ^1.6.0
+  material_symbols_icons: ^4.2892.0
+  connectivity_plus: ^7.0.0
+  google_fonts: 6.3.2
+  shared_preferences: ^2.2.2
+  google_sign_in: ^6.2.1
+  url_launcher: ^6.3.2
+  qr_flutter: ^4.1.0
+  firebase_core: ^3.8.0
+  firebase_auth: ^5.3.3
+  cloud_firestore: ^5.5.0
+  firebase_database: ^11.0.0
+  firebase_messaging: ^15.2.10
+  geolocator: ^14.0.2
+  geocoding: ^4.0.0
+  flutter_polyline_points: ^3.1.0
+  flutter_map: ^8.2.2
+  latlong2: ^0.9.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0 
+  flutter_launcher_icons: ^0.14.4
+  flutter_native_splash: ^2.4.5
+
+flutter_native_splash:
+  # Solid brand red — no logo (matches Flutter overlay + recents).
+  color: "#E3001B"
+  android_12:
+    color: "#E3001B"
+
+flutter_icons:
+  android: true
+  ios: true
+  image_path: "assets/logo.png"
+  
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - lib/client/images/landing_page/
+    - lib/client/images/CL_page/
+    - lib/client/images/home_page/
+    - lib/client/order/images/
+    - lib/client/favorite/images/
+    - lib/client/messages/images/
+    - lib/client/profile/images/
+    
+
+  fonts:
+    - family: NationalPark
+      fonts:
+        - asset: lib/client/fonts/National_Park/static/NationalPark-ExtraLight.ttf
+          weight: 200
+        - asset: lib/client/fonts/National_Park/static/NationalPark-Light.ttf
+          weight: 300
+        - asset: lib/client/fonts/National_Park/static/NationalPark-Regular.ttf
+          weight: 400
+        - asset: lib/client/fonts/National_Park/static/NationalPark-Medium.ttf
+          weight: 500
+        - asset: lib/client/fonts/National_Park/static/NationalPark-SemiBold.ttf
+          weight: 600
+        - asset: lib/client/fonts/National_Park/static/NationalPark-Bold.ttf
+          weight: 700
+        - asset: lib/client/fonts/National_Park/static/NationalPark-ExtraBold.ttf
+          weight: 800
+    - family: Inter
+      fonts:
+        - asset: lib/client/fonts/Inter/static/Inter_28pt-ExtraBold.ttf
+          weight: 800
+        - asset: lib/client/fonts/Inter/static/Inter_18pt-Thin.ttf
+          weight: 100
+          
+        
+
+
