@@ -142,7 +142,7 @@
             )
             .timeout(_apiTimeout);
         final data = jsonDecode(res.body) as Map<String, dynamic>;
-        if (res.statusCode != 200 || data['success'] != true) return [];
+        if (res.statusCode != 200 || !_driverApiJsonSuccess(data['success'])) return [];
         final raw = data['shipments'];
         if (raw is! List) return [];
         return raw
@@ -195,7 +195,7 @@
             .timeout(_apiTimeout);
         final data = jsonDecode(res.body) as Map<String, dynamic>;
         final list = data['data'];
-        if (res.statusCode != 200 || data['success'] != true || list is! List || list.isEmpty) {
+        if (res.statusCode != 200 || !_driverApiJsonSuccess(data['success']) || list is! List || list.isEmpty) {
           return null;
         }
         final latest = list.last;
@@ -312,9 +312,6 @@
         if (token == null || token.isEmpty) {
           if (!mounted) return;
           if (silent) {
-            setState(() {
-              _loading = false;
-            });
             return;
           }
           setState(() {
@@ -433,9 +430,6 @@
       } catch (_) {
         if (!mounted) return;
         if (silent) {
-          setState(() {
-            _loading = false;
-          });
           return;
         }
         setState(() {
@@ -548,7 +542,7 @@
                           )
                         : _threads.isEmpty
                             ? RefreshIndicator(
-                                onRefresh: () => _fetchThreads(),
+                                onRefresh: () => _fetchThreads(silent: true),
                                 child: LayoutBuilder(
                                   builder: (context, constraints) {
                                     return SingleChildScrollView(
@@ -564,7 +558,7 @@
                                 ),
                               )
                             : RefreshIndicator(
-                                onRefresh: _fetchThreads,
+                                onRefresh: () => _fetchThreads(silent: true),
                                 child: ListView.separated(
                                   padding: const EdgeInsets.symmetric(horizontal: 20),
                                   itemCount: _threads.length,
@@ -1332,7 +1326,7 @@
             )
             .timeout(_messagesRequestTimeout);
         final data = jsonDecode(res.body) as Map<String, dynamic>;
-        if (res.statusCode != 200 || data['success'] != true || data['data'] is! List) {
+        if (res.statusCode != 200 || !_driverApiJsonSuccess(data['success']) || data['data'] is! List) {
           return <_OrderMessage>[];
         }
         return (data['data'] as List)
@@ -1461,7 +1455,7 @@
         );
         final data = jsonDecode(res.body) as Map<String, dynamic>;
         if (!mounted) return;
-        if ((res.statusCode == 201 || res.statusCode == 200) && data['success'] == true) {
+        if ((res.statusCode == 201 || res.statusCode == 200) && _driverApiJsonSuccess(data['success'])) {
           _messageCtrl.clear();
           await _loadMessages(showLoader: false);
         } else {

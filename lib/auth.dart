@@ -8,7 +8,7 @@ import 'package:ice_cream/services/fcm_push_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Laravel API base URL (includes /api/v1).
-const String _apiBaseUrl = 'http://192.168.1.14:8000/api/v1';
+const String _apiBaseUrl = 'https://hricecream.site/api/v1';
 
 const String _tokenKey = 'auth_token';
 const String _customerCacheKey = 'auth_customer_cache';

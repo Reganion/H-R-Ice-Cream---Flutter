@@ -31,6 +31,7 @@ class CompleteDeliveryPhotoPage extends StatefulWidget {
 }
 
 class _CompleteDeliveryPhotoPageState extends State<CompleteDeliveryPhotoPage> {
+  static const int _maxProofPhotoBytes = 4 * 1024 * 1024; // 4 MB
   final TextEditingController _receivedAmountController =
       TextEditingController();
   int _selectedPaymentMethod = -1; // -1 = none, 0 = GCash, 1 = Cash
@@ -145,9 +146,24 @@ class _CompleteDeliveryPhotoPageState extends State<CompleteDeliveryPhotoPage> {
   Future<void> _takePhoto() async {
     final file = await _picker.pickImage(
       source: ImageSource.camera,
-      imageQuality: 85,
+      imageQuality: 55,
+      maxWidth: 1280,
+      maxHeight: 1280,
     );
     if (!mounted || file == null) return;
+
+    final bytes = await File(file.path).length();
+    if (!mounted) return;
+    if (bytes > _maxProofPhotoBytes) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Photo is too large. Retake photo with less detail or from a bit farther away.',
+          ),
+        ),
+      );
+      return;
+    }
 
     setState(() {
       _photoPath = file.path;
@@ -159,6 +175,16 @@ class _CompleteDeliveryPhotoPageState extends State<CompleteDeliveryPhotoPage> {
     if (_selectedPaymentMethod == 0) return 'gcash';
     if (_selectedPaymentMethod == 1) return 'cash';
     return '';
+  }
+
+  Map<String, dynamic>? _tryDecodeJsonObject(String body) {
+    if (body.trim().isEmpty) return null;
+    final decoded = jsonDecode(body);
+    if (decoded is Map<String, dynamic>) return decoded;
+    if (decoded is Map) {
+      return Map<String, dynamic>.from(decoded);
+    }
+    return null;
   }
 
   Future<void> _submitCompleteDelivery() async {
@@ -228,10 +254,21 @@ class _CompleteDeliveryPhotoPageState extends State<CompleteDeliveryPhotoPage> {
 
       final streamed = await req.send();
       final res = await http.Response.fromStream(streamed);
-      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      Map<String, dynamic>? data;
+      try {
+        data = _tryDecodeJsonObject(res.body);
+      } catch (_) {
+        data = null;
+      }
 
       if (!mounted) return;
-      if (res.statusCode >= 200 && res.statusCode < 300 && data['success'] == true) {
+      final is2xx = res.statusCode >= 200 && res.statusCode < 300;
+      final successFlag = data?['success'];
+      // Some backend responses for multipart endpoints may return empty/non-JSON
+      // bodies even when the operation succeeded. Treat 2xx as success unless
+      // JSON explicitly says success=false.
+      final isSuccess = is2xx && successFlag != false;
+      if (isSuccess) {
         Navigator.pushReplacement(
           context,
           MaterialPageRoute<void>(
@@ -241,13 +278,35 @@ class _CompleteDeliveryPhotoPageState extends State<CompleteDeliveryPhotoPage> {
         return;
       }
 
+      final message =
+          data?['message']?.toString() ??
+          (res.statusCode == 413
+              ? 'Submit failed. Photo file is too large.'
+              : is2xx
+              ? 'Submit failed. Unexpected server response.'
+              : 'Submit failed. Server returned ${res.statusCode}.');
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text((data['message'] ?? 'Submit failed.').toString())),
+        SnackBar(content: Text(message)),
+      );
+    } on SocketException {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Submit failed. Check your internet connection.')),
+      );
+    } on HttpException {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Submit failed. Network request error.')),
+      );
+    } on FormatException {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Submit failed. Invalid server response format.')),
       );
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Submit failed. Check your connection.')),
+        const SnackBar(content: Text('Submit failed. Please try again.')),
       );
     } finally {
       if (mounted) setState(() => _submitting = false);

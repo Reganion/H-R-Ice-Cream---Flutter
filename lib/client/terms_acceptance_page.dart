@@ -121,6 +121,10 @@ class _TermsAcceptanceDialogState extends State<_TermsAcceptanceDialog> {
                       '6. Changes',
                       'We may update these terms from time to time. Continued use of the app after changes means you accept the updated terms. If we require a new acceptance, we will ask you in the app before you continue.',
                     ),
+                    _section(
+                      '7. Gallon Container Responsibility',
+                      'Customers agree to return all gallon containers in good condition. Any damaged, lost, or unreturned gallon container will incur a replacement fee of ₱500, which must be settled accordingly.',
+                    ),
                   ],
                 ),
               ),

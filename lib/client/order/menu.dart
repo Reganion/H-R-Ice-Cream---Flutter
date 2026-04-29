@@ -1766,9 +1766,9 @@ class _MenuPageState extends State<MenuPage> with TickerProviderStateMixin {
                             border: Border.all(color: Color(0xFFE3001B)),
                           ),
                           child: const Icon(
-                            Icons.add,
+                            Icons.shopping_cart_outlined,
                             color: Color(0xFFE3001B),
-                            size: 28,
+                            size: 24,
                           ),
                         ),
                       ),
@@ -2480,6 +2480,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
   String selectedPayment = "";
   /// null = "No selected", 0.25/0.5/0.75/1.0 = percentage of total
   double? selectedDownPaymentPercent;
+  bool _showValidationErrors = false;
 
   /// Address shown in Place Order: from profile (API) or chosen in Address Selection.
   Map<String, dynamic>? _checkoutAddress;
@@ -2489,7 +2490,61 @@ class _CheckoutPageState extends State<CheckoutPage> {
   /// Idempotency key for downpayment API. Reused on retry to avoid duplicate orders.
   String? _downpaymentIdempotencyKey;
 
+  /// Minimum notice for delivery: preparation takes about 4–5 hours.
+  static const Duration _minimumDeliveryLeadTime = Duration(hours: 4);
+  static final DateTime _deliveryDatePickerLastDate = DateTime(2030, 12, 31);
+
   double get _totalPayment => widget.cartSubtotal ?? 0;
+
+  DateTime _startOfTodayLocal() {
+    final n = DateTime.now();
+    return DateTime(n.year, n.month, n.day);
+  }
+
+  /// Chosen delivery date + time in local timezone.
+  DateTime? get _scheduledDeliveryDateTime {
+    if (selectedDate == null || selectedTime == null) return null;
+    final d = selectedDate!;
+    return DateTime(d.year, d.month, d.day, selectedTime!.hour, selectedTime!.minute);
+  }
+
+  /// True when delivery is strictly before [now + 4 hours] (we need at least 4 hours notice).
+  bool get _isDeliveryScheduleTooSoon {
+    final scheduled = _scheduledDeliveryDateTime;
+    if (scheduled == null) return false;
+    final earliest = DateTime.now().add(_minimumDeliveryLeadTime);
+    return scheduled.isBefore(earliest);
+  }
+
+  Future<void> _showMinimumLeadTimeAlert() async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (BuildContext ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        title: const Text('Delivery schedule'),
+        content: const Text(
+          'Our preparation usually takes about 4 to 5 hours, so we cannot accept '
+          'bookings with less than 4 hours notice from now. Please pick a date and '
+          'time at least 4 hours from the current time.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  DateTime _clampDateForPicker(DateTime? selected, DateTime firstDay) {
+    final day = selected ?? DateTime.now();
+    var d = DateTime(day.year, day.month, day.day);
+    if (d.isBefore(firstDay)) d = firstDay;
+    if (d.isAfter(_deliveryDatePickerLastDate)) d = _deliveryDatePickerLastDate;
+    return d;
+  }
 
   @override
   void initState() {
@@ -2542,26 +2597,42 @@ class _CheckoutPageState extends State<CheckoutPage> {
   String get _summaryGallon =>
       '₱${NumberFormat('#,##0').format(widget.cartGallonTotal ?? 0)}';
 
+  bool get _requiresDownPayment => selectedPayment == 'gcash';
+
+  String? get _addressError {
+    if (!_showValidationErrors) return null;
+    final fullAddress = (_checkoutAddress?['fullAddress'] ?? '').toString().trim();
+    if (fullAddress.isEmpty) return "Address details are required*";
+    return null;
+  }
+
   String? get _deliveryScheduleError {
+    if (!_showValidationErrors) return null;
     if (selectedDate == null) return "Delivery schedule is required*";
     if (selectedTime == null) return "Delivery schedule is required*";
+    if (_isDeliveryScheduleTooSoon) {
+      return "Preparation 4–5 hrs ahead*";
+    }
     return null;
   }
 
   String? get _downPaymentError {
+    if (!_showValidationErrors || !_requiresDownPayment) return null;
     if (selectedDownPaymentPercent == null) return "Down payment is required*";
     return null;
   }
 
   String? get _paymentMethodError {
+    if (!_showValidationErrors) return null;
     if (selectedPayment.isEmpty) return "Payment method is required*";
     return null;
   }
 
-  bool get _canPlaceOrder =>
+  bool get _isFormValid =>
       selectedDate != null &&
       selectedTime != null &&
-      selectedDownPaymentPercent != null &&
+      (!_requiresDownPayment || selectedDownPaymentPercent != null) &&
+      (_checkoutAddress?['fullAddress'] ?? '').toString().trim().isNotEmpty &&
       selectedPayment.isNotEmpty;
 
   /// Opens QR screen using string ids only (Firestore-safe; no [int.parse]).
@@ -2619,6 +2690,11 @@ class _CheckoutPageState extends State<CheckoutPage> {
           behavior: SnackBarBehavior.floating,
         ),
       );
+      return;
+    }
+    if (_isDeliveryScheduleTooSoon) {
+      if (!mounted) return;
+      await _showMinimumLeadTimeAlert();
       return;
     }
     final base = Auth.apiBaseUrl;
@@ -2717,7 +2793,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
   /// Sends only needed order details to backend, then redirects to home with success alert.
   /// Backend creates order(s) and notifies admin.
   Future<void> _placeOrder() async {
-    if (!_canPlaceOrder) return;
+    if (!_isFormValid) return;
     final items = widget.cartItems;
     if (items == null || items.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -2751,6 +2827,11 @@ class _CheckoutPageState extends State<CheckoutPage> {
           behavior: SnackBarBehavior.floating,
         ),
       );
+      return;
+    }
+    if (_isDeliveryScheduleTooSoon) {
+      if (!mounted) return;
+      await _showMinimumLeadTimeAlert();
       return;
     }
     setState(() => _placingOrder = true);
@@ -2864,17 +2945,22 @@ class _CheckoutPageState extends State<CheckoutPage> {
           bottom: 10,
         ),
         child: GestureDetector(
-          onTap: () {
-            if (!_canPlaceOrder) {
-              setState(() {});
+          onTap: () async {
+            if (_placingOrder) return;
+            setState(() => _showValidationErrors = true);
+            if (!_isFormValid) {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
                   content: Text(
-                    'Please complete delivery schedule, select down payment, and choose a payment method.',
+                    'Please complete required fields before placing your order.',
                   ),
                   behavior: SnackBarBehavior.floating,
                 ),
               );
+              return;
+            }
+            if (_isDeliveryScheduleTooSoon) {
+              await _showMinimumLeadTimeAlert();
               return;
             }
             if (selectedPayment == 'cod') {
@@ -2884,7 +2970,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
             }
           },
           child: AnimatedOpacity(
-            opacity: _canPlaceOrder && !_placingOrder ? 1 : 0.5,
+            opacity: _placingOrder ? 0.5 : 1,
             duration: const Duration(milliseconds: 200),
             child: Container(
               height: 55,
@@ -2911,6 +2997,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
             const SizedBox(height: 12),
             _buildSection(
               title: "Address details",
+              validationError: _addressError,
               trailing: "Edit",
               onEditAddress: () async {
                 final result = await Navigator.push<Map<String, dynamic>>(
@@ -3111,48 +3198,6 @@ class _CheckoutPageState extends State<CheckoutPage> {
             ),
 
             _buildSection(
-              title: "Down payment Amount",
-              validationError: _downPaymentError,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SizedBox(height: 0),
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      double dotWidth = 4.1;
-                      double spacing = 4;
-                      int count = (constraints.maxWidth / (dotWidth + spacing)).floor();
-
-                      return Row(
-                        children: List.generate(
-                          count,
-                          (_) => Container(
-                            width: dotWidth,
-                            height: 1,
-                            margin: EdgeInsets.only(right: spacing),
-                            color: const Color(0xFFB2B2B2),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-
-                  const SizedBox(height: 14),
-                  Row(
-                    children: [
-                      Expanded(child: _percentBox(0.25)),
-                      const SizedBox(width: 8),
-                      Expanded(child: _percentBox(0.5)),
-                      const SizedBox(width: 8),
-                      Expanded(child: _percentBox(0.75)),
-                      const SizedBox(width: 8),
-                      Expanded(child: _percentBox(1.0)),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            _buildSection(
               title: "Payment Method",
               validationError: _paymentMethodError,
               child: Column(
@@ -3187,7 +3232,9 @@ class _CheckoutPageState extends State<CheckoutPage> {
                     children: [
                       Expanded(
                         child: GestureDetector(
-                          onTap: () => setState(() => selectedPayment = "gcash"),
+                          onTap: () => setState(() {
+                            selectedPayment = "gcash";
+                          }),
                           child: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
                             decoration: BoxDecoration(
@@ -3249,7 +3296,10 @@ class _CheckoutPageState extends State<CheckoutPage> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: GestureDetector(
-                          onTap: () => setState(() => selectedPayment = "cod"),
+                          onTap: () => setState(() {
+                            selectedPayment = "cod";
+                            selectedDownPaymentPercent = null;
+                          }),
                           child: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
                             decoration: BoxDecoration(
@@ -3321,6 +3371,48 @@ class _CheckoutPageState extends State<CheckoutPage> {
                 ],
               ),
             ),
+            if (_requiresDownPayment)
+              _buildSection(
+                title: "Down payment Amount",
+                validationError: _downPaymentError,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 0),
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        double dotWidth = 4.1;
+                        double spacing = 4;
+                        int count = (constraints.maxWidth / (dotWidth + spacing)).floor();
+
+                        return Row(
+                          children: List.generate(
+                            count,
+                            (_) => Container(
+                              width: dotWidth,
+                              height: 1,
+                              margin: EdgeInsets.only(right: spacing),
+                              color: const Color(0xFFB2B2B2),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        Expanded(child: _percentBox(0.25)),
+                        const SizedBox(width: 8),
+                        Expanded(child: _percentBox(0.5)),
+                        const SizedBox(width: 8),
+                        Expanded(child: _percentBox(0.75)),
+                        const SizedBox(width: 8),
+                        Expanded(child: _percentBox(1.0)),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
             _buildSection(
               padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
               child: Column(
@@ -3503,11 +3595,12 @@ class _CheckoutPageState extends State<CheckoutPage> {
   Widget _datePicker() {
     return InkWell(
       onTap: () async {
+        final firstDay = _startOfTodayLocal();
         DateTime? date = await showDatePicker(
           context: context,
-          initialDate: selectedDate ?? DateTime.now(), // Fix: Ensure initialDate is provided
-          firstDate: DateTime.now(),
-          lastDate: DateTime(2030),
+          initialDate: _clampDateForPicker(selectedDate, firstDay),
+          firstDate: firstDay,
+          lastDate: _deliveryDatePickerLastDate,
           builder: (context, child) {
             return Theme(
               data: Theme.of(context).copyWith(

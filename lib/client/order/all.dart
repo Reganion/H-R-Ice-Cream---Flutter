@@ -6,6 +6,7 @@ import 'package:ice_cream/auth.dart';
 import 'package:ice_cream/client/favorite/favorite.dart';
 import 'package:ice_cream/client/home_page.dart';
 import 'package:ice_cream/client/messages/messages.dart';
+import 'package:ice_cream/client/order/cart.dart';
 import 'package:ice_cream/client/order/deliverTracker.dart';
 import 'package:ice_cream/client/order/menu.dart';
 import 'package:ice_cream/client/order/order_detail.dart';
@@ -184,6 +185,238 @@ class _OrderHistoryPageState extends State<OrderHistoryPage> {
 
   bool _isRateable(OrderRecord order) {
     return _rateableStatuses.contains(_normalizeStatus(order.status));
+  }
+
+  bool? _parseBoolLike(dynamic value) {
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    if (value is String) {
+      final normalized = value.trim().toLowerCase();
+      if (normalized.isEmpty) return null;
+      if (normalized == 'true' || normalized == '1' || normalized == 'yes') {
+        return true;
+      }
+      if (normalized == 'false' || normalized == '0' || normalized == 'no') {
+        return false;
+      }
+    }
+    return null;
+  }
+
+  String _normalizeStockStatus(dynamic value) {
+    return (value?.toString() ?? '')
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'[\s_-]+'), '');
+  }
+
+  bool _statusLooksOutOfStock(dynamic value) {
+    final normalized = _normalizeStockStatus(value);
+    if (normalized.isEmpty) return false;
+    return const <String>{
+      'out',
+      'outofstock',
+      'unavailable',
+      'notavailable',
+      'soldout',
+      'nostock',
+      'inactive',
+      'disabled',
+    }.contains(normalized);
+  }
+
+  bool _isFlavorOutOfStock(Map<String, dynamic>? flavor) {
+    if (flavor == null) return true;
+    final statusCandidates = <dynamic>[
+      flavor['status'],
+      flavor['availability_status'],
+      flavor['stock_status'],
+      flavor['availability'],
+    ];
+    final isOutOfStockStatus = statusCandidates.any(_statusLooksOutOfStock);
+    final outOfStockFlag = _parseBoolLike(flavor['is_out_of_stock']) ??
+        _parseBoolLike(flavor['out_of_stock']) ??
+        false;
+    final availableFlag = _parseBoolLike(flavor['is_available']) ??
+        _parseBoolLike(flavor['available']) ??
+        _parseBoolLike(flavor['in_stock']);
+
+    final stockRaw = flavor['stock'] ?? flavor['stocks'] ?? flavor['quantity'];
+    final stockNum = stockRaw is num
+        ? stockRaw.toDouble()
+        : double.tryParse((stockRaw ?? '').toString().trim());
+    final outByStockCount = stockNum != null && stockNum <= 0;
+
+    return isOutOfStockStatus ||
+        outOfStockFlag ||
+        (availableFlag != null && !availableFlag) ||
+        outByStockCount;
+  }
+
+  String _normalizeFlavorName(String value) {
+    return value
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'\s+flavor$'), '')
+        .replaceAll(RegExp(r'\s+'), ' ');
+  }
+
+  String _normalizeCategory(String? category) {
+    if (category == null || category.isEmpty) return 'Plain Flavors';
+    final c = category.toLowerCase().trim();
+    if (c.contains('special')) return 'Special Flavors';
+    if (c.contains('topping')) return 'Toppings';
+    return 'Plain Flavors';
+  }
+
+  String _imageUrl(String? path) {
+    if (path == null || path.isEmpty) return '';
+    final base = Auth.apiBaseUrl.replaceAll('/api/v1', '');
+    return path.startsWith('http') ? path : '$base/$path';
+  }
+
+  Future<void> _showOutOfStockDialog([String? message]) async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Not Available'),
+        content: Text(message?.trim().isNotEmpty == true
+            ? message!.trim()
+            : 'Sorry, this product is out of stock.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _buyAgain(OrderRecord order) async {
+    final base = Auth.apiBaseUrl;
+    final flavorName = order.productName.trim();
+    final desiredGallon = order.gallonSize.trim();
+    final qty = order.quantity <= 0 ? 1 : order.quantity;
+
+    try {
+      final results = await Future.wait([
+        http.get(Uri.parse('$base/flavors')),
+        http.get(Uri.parse('$base/gallons')),
+      ]);
+      if (!mounted) return;
+      if (results[0].statusCode != 200) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Unable to load flavors right now.'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+
+      final flavorsBody = jsonDecode(results[0].body) as Map<String, dynamic>?;
+      final rawFlavors = flavorsBody?['data'] as List<dynamic>? ?? const [];
+      final flavors = rawFlavors
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+      if (flavors.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No flavors found. Please try again later.'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+
+      final normalizedName = _normalizeFlavorName(flavorName);
+      final matchedFlavor = flavors.firstWhere(
+        (flavor) =>
+            _normalizeFlavorName((flavor['name'] ?? '').toString()) == normalizedName,
+        orElse: () => <String, dynamic>{},
+      );
+      if (matchedFlavor.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Flavor not found anymore in menu.'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+
+      if (_isFlavorOutOfStock(matchedFlavor)) {
+        await _showOutOfStockDialog(
+          (matchedFlavor['availability_message'] as String?)?.trim(),
+        );
+        return;
+      }
+
+      final gallons = <Map<String, dynamic>>[];
+      if (results[1].statusCode == 200) {
+        final gallonsBody = jsonDecode(results[1].body) as Map<String, dynamic>?;
+        final rawGallons = gallonsBody?['data'] as List<dynamic>? ?? const [];
+        gallons.addAll(
+          rawGallons
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e)),
+        );
+      }
+
+      final matchedGallon = gallons.firstWhere(
+        (g) {
+          final size = (g['size'] ?? g['name'] ?? '').toString().trim().toLowerCase();
+          return size == desiredGallon.toLowerCase();
+        },
+        orElse: () => <String, dynamic>{},
+      );
+      final addonRaw = matchedGallon['addon_price'] ?? matchedGallon['price'];
+      final gallonAddon = addonRaw is num
+          ? addonRaw.toDouble()
+          : double.tryParse((addonRaw ?? '0').toString()) ?? 0;
+
+      final priceRaw = matchedFlavor['price'];
+      final flavorPrice = priceRaw is num
+          ? priceRaw.toDouble()
+          : double.tryParse((priceRaw ?? '0').toString()) ?? 0;
+      final lineTotal = (flavorPrice + gallonAddon) * qty;
+      final imagePath = (matchedFlavor['mobile_image'] ?? matchedFlavor['image']) as String?;
+      final image = _imageUrl(imagePath);
+      final category = _normalizeCategory(matchedFlavor['category'] as String?);
+      final cartItem = CartItem(
+        id: (matchedFlavor['id'] ?? '').toString(),
+        quantity: qty,
+        name: (matchedFlavor['name'] ?? flavorName).toString(),
+        image: image.isEmpty ? 'lib/client/order/images/sb.png' : image,
+        isNetworkImage: image.startsWith('http'),
+        size: desiredGallon.isEmpty ? '—' : desiredGallon,
+        category: category,
+        lineTotal: lineTotal,
+        gallonAddonPrice: gallonAddon,
+      );
+
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => CheckoutPage(
+            cartItems: [cartItem],
+            cartSubtotal: lineTotal,
+            cartGallonTotal: gallonAddon * qty,
+          ),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not process Buy Again. Please try again.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   @override
@@ -563,7 +796,7 @@ class _OrderHistoryPageState extends State<OrderHistoryPage> {
                         if (showRightBtn) ...[
                           const SizedBox(width: 5),
                           GestureDetector(
-                            onTap: () {
+                            onTap: () async {
                               if (rightText == "Track Order") {
                                 Navigator.push(
                                   context,
@@ -573,12 +806,7 @@ class _OrderHistoryPageState extends State<OrderHistoryPage> {
                                 );
                               }
                               if (rightText == "Buy Again") {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => const MenuPage(),
-                                  ),
-                                );
+                                await _buyAgain(order);
                               }
                             },
                             child: Container(

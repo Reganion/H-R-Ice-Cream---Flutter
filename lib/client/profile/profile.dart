@@ -3586,6 +3586,10 @@ class FaqDialog extends StatelessWidget {
                 question: 'How do I return the gallon?',
                 answer: 'Once the gallon is empty, simply wait for the driver to pick it up.',
               ),
+              _faqItem(
+                question: 'What happens if the gallon is damaged?',
+                answer: 'Customers are responsible for returning the gallon container in good condition. If the gallon is damaged or lost, a ₱500 replacement fee will be charged.',
+              ),
             ],
           ),
         ),

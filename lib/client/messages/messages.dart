@@ -1689,20 +1689,20 @@ class _MessagesPageState extends State<MessagesPage> {
 
             Expanded(
               child: RefreshIndicator(
-                onRefresh: () async {
-                  if (selectedTab == 0) {
-                    await Future.wait<void>([
-                      _loadChatSummary(),
-                      _loadDriverThreads(),
-                    ]);
-                  } else {
-                    await _loadNotifications();
-                  }
-                },
-                child: ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  children: [
+                    onRefresh: () async {
+                      if (selectedTab == 0) {
+                        await Future.wait<void>([
+                          _refreshChatSummarySilent(),
+                          _refreshDriverThreadsSilent(),
+                        ]);
+                      } else {
+                        await _refreshNotificationsSilent();
+                      }
+                    },
+                    child: ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      children: [
                     if (selectedTab == 0) ...[
                       // One centered loader while admin chat or driver threads loads (avoid stacked spinners).
                       if (_chatLoading || _driverLoading)
@@ -1886,8 +1886,8 @@ class _MessagesPageState extends State<MessagesPage> {
                       ],
                     ],
                 ],
-                ),
-              ),
+                    ),
+                  ),
             ),
           ],
         ),
@@ -2847,18 +2847,18 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                                   ),
                                 )
                               : RefreshIndicator(
-                                  onRefresh: () async {
-                                    await _loadMessages();
-                                  },
-                                  child: ListView.builder(
-                                    physics: const AlwaysScrollableScrollPhysics(),
-                                    controller: _scrollController,
-                                    itemCount: _messages.length,
-                                    itemBuilder: (context, index) {
-                                      final m = _messages[index];
-                                      return _buildMessageBubble(m);
-                                    },
-                                  ),
+                                      onRefresh: () async {
+                                        await _loadMessages(silent: true);
+                                      },
+                                      child: ListView.builder(
+                                        physics: const AlwaysScrollableScrollPhysics(),
+                                        controller: _scrollController,
+                                        itemCount: _messages.length,
+                                        itemBuilder: (context, index) {
+                                          final m = _messages[index];
+                                          return _buildMessageBubble(m);
+                                        },
+                                      ),
                                 ),
                     ),
                     Padding(
@@ -3517,26 +3517,26 @@ class _DriverOrderChatPageState extends State<DriverOrderChatPage>
                                   ),
                                 )
                               : RefreshIndicator(
-                                  onRefresh: () async {
-                                    await _loadMessages();
-                                  },
-                                  child: ListView.builder(
-                                    physics: const AlwaysScrollableScrollPhysics(),
-                                    controller: _scrollController,
-                                    itemCount: _messages.length,
-                                    itemBuilder: (context, index) {
-                                      final m = _messages[index];
-                                      return GestureDetector(
-                                        onLongPress: () => _onMessageLongPress(m),
-                                        onTap: () => _onMessageTap(m),
-                                        child: _buildMessageBubble(
-                                          m,
-                                          isSelectionMode: _selectionMode,
-                                          isSelected: _selectedMessageIds.contains(m.id),
-                                        ),
-                                      );
-                                    },
-                                  ),
+                                      onRefresh: () async {
+                                        await _loadMessages(silent: true);
+                                      },
+                                      child: ListView.builder(
+                                        physics: const AlwaysScrollableScrollPhysics(),
+                                        controller: _scrollController,
+                                        itemCount: _messages.length,
+                                        itemBuilder: (context, index) {
+                                          final m = _messages[index];
+                                          return GestureDetector(
+                                            onLongPress: () => _onMessageLongPress(m),
+                                            onTap: () => _onMessageTap(m),
+                                            child: _buildMessageBubble(
+                                              m,
+                                              isSelectionMode: _selectionMode,
+                                              isSelected: _selectedMessageIds.contains(m.id),
+                                            ),
+                                          );
+                                        },
+                                      ),
                                 ),
                     ),
                     Padding(

@@ -992,7 +992,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                                               Text(
                                                 price,
                                                 style: TextStyle(
-                                                  color: const Color(0xFFE3001B),
+                                                  color: Colors.white,
                                                   fontSize: isMobile(context)
                                                       ? 13
                                                       : 14,

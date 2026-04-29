@@ -32,7 +32,8 @@ class ConfirmDeliveryPage extends StatefulWidget {
 class _ConfirmDeliveryPageState extends State<ConfirmDeliveryPage> {
   late bool _showDeliverNow;
   bool _loading = true;
-  bool _submitting = false;
+  /// Which shipment POST is running: `'accept'`, `'reject'`, or `'deliver'` — only that button shows busy.
+  String? _inFlightAction;
   String _error = '';
   Map<String, dynamic>? _shipment;
 
@@ -138,8 +139,8 @@ class _ConfirmDeliveryPageState extends State<ConfirmDeliveryPage> {
 
   Future<bool> _postShipmentAction(String action) async {
     final id = _shipmentId;
-    if (id == null || _submitting) return false;
-    setState(() => _submitting = true);
+    if (id == null || _inFlightAction != null) return false;
+    setState(() => _inFlightAction = action);
     try {
       final token = await _token();
       if (token == null || token.isEmpty) {
@@ -176,7 +177,7 @@ class _ConfirmDeliveryPageState extends State<ConfirmDeliveryPage> {
       }
       return false;
     } finally {
-      if (mounted) setState(() => _submitting = false);
+      if (mounted) setState(() => _inFlightAction = null);
     }
   }
 
@@ -502,8 +503,10 @@ class _ConfirmDeliveryPageState extends State<ConfirmDeliveryPage> {
                                     ),
                                   DeliveryFilledPillButton(
                                     label: 'Deliver now',
-                                    busy: _submitting,
-                                    enabled: !_loading && _canDeliverNow,
+                                    busy: _inFlightAction == 'deliver',
+                                    enabled: !_loading &&
+                                        _canDeliverNow &&
+                                        (_inFlightAction == null || _inFlightAction == 'deliver'),
                                     verticalPadding: isCompact ? 13 : 16,
                                     fontSize: isCompact ? 15 : 16,
                                     onPressed: () async {
@@ -529,8 +532,9 @@ class _ConfirmDeliveryPageState extends State<ConfirmDeliveryPage> {
                                     child: DeliveryFilledPillButton(
                                       label: 'Accept Book',
                                       backgroundColor: const Color(0xFF007CFF),
-                                      busy: _submitting,
-                                      enabled: !_loading,
+                                      busy: _inFlightAction == 'accept',
+                                      enabled: !_loading &&
+                                          (_inFlightAction == null || _inFlightAction == 'accept'),
                                       verticalPadding: isCompact ? 13 : 16,
                                       fontSize: isCompact ? 15 : 16,
                                       onPressed: () async {
@@ -545,8 +549,9 @@ class _ConfirmDeliveryPageState extends State<ConfirmDeliveryPage> {
                                   Expanded(
                                     child: DeliveryOutlinedPillButton(
                                       label: 'Reject',
-                                      busy: _submitting,
-                                      enabled: !_loading,
+                                      busy: _inFlightAction == 'reject',
+                                      enabled: !_loading &&
+                                          (_inFlightAction == null || _inFlightAction == 'reject'),
                                       verticalPadding: isCompact ? 13 : 16,
                                       fontSize: isCompact ? 15 : 16,
                                       onPressed: () async {
